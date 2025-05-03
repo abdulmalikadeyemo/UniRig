@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>UniRig API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        #status { margin: 20px 0; padding: 10px; border: 1px solid #ddd; }
+        button { padding: 10px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        input[type="file"] { margin: 20px 0; }
+        #downloadLink { display: none; margin: 20px 0; padding: 10px; background: #2196F3; color: white; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <h1>UniRig Model Processing</h1>
+    
+    <div>
+        <input type="file" id="modelFile" accept=".obj,.fbx,.glb,.gltf,.vrm">
+        <button id="uploadButton">Upload and Process</button>
+    </div>
+    
+    <div id="status">Status: Ready to upload</div>
+    
+    <a id="downloadLink" href="#" target="_blank">Download Processed Model</a>
+    
+    <script>
+        const uploadButton = document.getElementById('uploadButton');
+        const statusDiv = document.getElementById('status');
+        const downloadLink = document.getElementById('downloadLink');
+        let socket = null;
+        
+        uploadButton.addEventListener('click', async () => {
+            const fileInput = document.getElementById('modelFile');
+            if (!fileInput.files[0]) {
+                alert('Please select a file');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('model_file', fileInput.files[0]);
+            
+            statusDiv.textContent = 'Status: Uploading...';
+            downloadLink.style.display = 'none';
+            
+            try {
+                const response = await fetch('/api/rig', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.textContent = `Status: ${data.message}`;
+                    
+                    // Connect to WebSocket for real-time updates
+                    connectWebSocket(data.job_id);
+                } else {
+                    statusDiv.textContent = `Status: Error - ${data.error}`;
+                }
+            } catch (error) {
+                statusDiv.textContent = `Status: Error - ${error.message}`;
+            }
+        });
+        
+        function connectWebSocket(jobId) {
+            // Close previous socket if exists
+            if (socket) {
+                socket.close();
+            }
+            
+            // Connect to WebSocket endpoint
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            socket = new WebSocket(`${wsProtocol}//${window.location.host}/api/ws/${jobId}`);
+            
+            socket.onopen = () => {
+                console.log('WebSocket connected');
+            };
+            
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                statusDiv.textContent = `Status: ${data.status} - ${data.message}`;
+                
+                // When processing is complete, show download link
+                if (data.status === 'completed' && data.output_file) {
+                    downloadLink.href = `/api/download/${data.output_file}`;
+                    downloadLink.textContent = `Download Rigged Model (${data.output_file})`;
+                    downloadLink.style.display = 'inline-block';
+                }
+            };
+            
+            socket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                statusDiv.textContent = 'Status: WebSocket error';
+            };
+            
+            socket.onclose = () => {
+                console.log('WebSocket closed');
+            };
+        }
+    </script>
+</body>
+</html> 
