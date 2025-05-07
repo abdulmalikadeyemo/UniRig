@@ -3,6 +3,7 @@ from typing import List, Dict
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import uuid
 
@@ -12,6 +13,15 @@ from app.processing import process_model, send_status_update
 from app.config import OUTPUT_DIR
 
 app = FastAPI(title="UniRig API")
+
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # Mount static files (for WebSocket testing UI)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -67,10 +77,17 @@ async def download_file(filename: str):
             content={"error": "File not found"}
         )
     
+    # Determine content type based on file extension
+    content_type = "application/octet-stream"
+    if filename.lower().endswith(".glb"):
+        content_type = "model/gltf-binary"
+    elif filename.lower().endswith(".gltf"):
+        content_type = "model/gltf+json"
+    
     return FileResponse(
         path=file_path,
         filename=filename,
-        media_type="application/octet-stream"
+        media_type=content_type
     )
 
 @app.websocket("/api/ws/{job_id}")
@@ -107,7 +124,7 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
 
 @app.get("/")
 async def get_index():
-    """Serve a simple WebSocket test UI"""
+    """Serve the main web interface"""
     return FileResponse("static/index.html")
 
 if __name__ == "__main__":

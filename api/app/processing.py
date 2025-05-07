@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from fastapi import WebSocket
 from app.config import SKELETON_SCRIPT, SKINNING_SCRIPT, MERGE_SCRIPT, OUTPUT_DIR, TMP_DIR
 from app.models import Job, ProcessingStatus, StatusUpdate
-from app.utils import run_command, active_jobs, active_connections, cleanup_tmp_files
+from app.utils import run_command, active_jobs, active_connections, cleanup_tmp_files, convert_to_glb
 
 async def send_status_update(job_id: str, status: ProcessingStatus, message: str, output_file: Optional[str] = None):
     """Send status update to connected clients"""
@@ -106,12 +106,24 @@ async def process_model(job_id: str, input_path: Path):
         if not success:
             await send_status_update(job_id, ProcessingStatus.FAILED, f"Merge operation failed: {output}")
             return
-            
+        
+        # 4. Create web-friendly GLB version if needed
+        web_output = final_output
+        web_output_filename = f"{job_id}_rigged{output_ext}"
+        
+        # If not already GLB, convert to GLB format for web viewer
+        if output_ext.lower() != '.glb':
+            await send_status_update(job_id, ProcessingStatus.MERGE_STARTED, "Creating web-friendly version...")
+            web_output = convert_to_glb(final_output)
+            # If conversion was successful, update the output filename
+            if web_output != final_output:
+                web_output_filename = web_output.name
+        
         await send_status_update(
             job_id, 
             ProcessingStatus.COMPLETED, 
             "Model rigged successfully",
-            f"{job_id}_rigged{output_ext}"
+            web_output_filename
         )
         
         # Clean up temporary files
